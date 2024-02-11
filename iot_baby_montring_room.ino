@@ -22,11 +22,11 @@ unsigned long prevTime_T3 = millis();
 #define WIFI_PASSWORD "dlo1223334444"     // WiFi Password
 
 // Firebase Project API
-#define API_KEY "2awss7veV0FzT9m92osVfsBM70fBFV8Gigkl6asw"  // Firebase API Key
-#define DATABASE_URL "https://solar-panel-project-af78b-default-rtdb.firebaseio.com"  // Firebase Database URL
-long interval_T1 = 100;
-long interval_T2 = 15000;
-long interval_T3 = 30000;
+#define API_KEY "y07OKVGpeeR0VMpbQM0ZVp5XnHrCBbUAXUJcT2R4"  // Firebase API Key
+#define DATABASE_URL "https://iot---flutter-default-rtdb.firebaseio.com"  // Firebase Database URL
+long interval_T1 = 0;
+long interval_T2 = 0;
+long interval_T3 = 0;
 //All pins needed to connect to board
 //Digital pins
 #define LED 13
@@ -39,7 +39,7 @@ const int soundPin = 34;
 //Variable for Sensors Value:
 int temreature = 0, humidity = 0, soundValue = 0, airQuality = 0;
 //Variable for all Thresholds :
-int airQualityThree = 0, soundThreShold = 0, humidityThreShold = 0;
+float airQualityThree = 0, soundThreShold = 0, humidityThreShold = 0;
 DHT dht(dhtPin, DHT11);
 
 //setup Function:
@@ -79,6 +79,7 @@ void setup() {
 }
 //Loop Function:
 void loop() {
+          servo.write(280);
   unsigned long currentTime = millis();
   if (currentTime - prevTime_T1 > interval_T1) {
     //Controlling Devices:
