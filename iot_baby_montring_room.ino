@@ -1,5 +1,3 @@
-// Gas Sensor
-#include <MQ135.h>
 // Temo Hum Sensor
 #include <DHT.h>
 // Servo Motor
@@ -18,30 +16,35 @@ unsigned long duration = 0;
 unsigned long prevTime_T1 = millis();
 unsigned long prevTime_T2 = millis();
 unsigned long prevTime_T3 = millis();
-#define WIFI_SSID "Tenda_79F720"          // WiFi SSID
-#define WIFI_PASSWORD "dlo1223334444"     // WiFi Password
+#define WIFI_SSID "Tenda_79F720"       // WiFi SSID
+#define WIFI_PASSWORD "dlo1223334444"  // WiFi Password
 
 // Firebase Project API
-#define API_KEY "y07OKVGpeeR0VMpbQM0ZVp5XnHrCBbUAXUJcT2R4"  // Firebase API Key
+#define API_KEY "y07OKVGpeeR0VMpbQM0ZVp5XnHrCBbUAXUJcT2R4"                // Firebase API Key
 #define DATABASE_URL "https://iot---flutter-default-rtdb.firebaseio.com"  // Firebase Database URL
+// Timing Variables:
 long interval_T1 = 0;
 long interval_T2 = 0;
 long interval_T3 = 0;
+unsigned long prevTime = 0;
+const long thresholdUpdateInterval = 5000;  // Update thresholds every 5 seconds
+
 //All pins needed to connect to board
 //Digital pins
 #define LED 13
 #define dhtPin 27
-#define servoPin 14
+const int servoPin = 14;
 #define aspritor 12
 //Analogs pins
-const int mq135Pin = 35;
-const int soundPin = 34;
+const int soundPin = 35;
 //Variable for Sensors Value:
-int temreature = 0, humidity = 0, soundValue = 0, airQuality = 0;
+int temreature = 0, humidity = 0, soundValue = 0;
 //Variable for all Thresholds :
-float airQualityThree = 0, soundThreShold = 0, humidityThreShold = 0;
+int soundThreShold = 0, humidityThreShold = 0;
+int prevsoundThreShold = 0, prevhumidityThreShold = 0;
+int servoAngle = 90;
 DHT dht(dhtPin, DHT11);
-
+String prevLedValue = "0", prevBedValue = "0", prevAspValue = "0";
 //setup Function:
 void setup() {
   Serial.begin(115200);
@@ -49,9 +52,6 @@ void setup() {
   dht.begin();
   pinMode(LED, OUTPUT);
   pinMode(aspritor, OUTPUT);
-  pinMode(servoPin, OUTPUT);
-  pinMode(mq135Pin, INPUT);
-  pinMode(soundPin, INPUT);
 
   //Function To Connect To fireBase
   // Connect to WiFi
@@ -61,14 +61,14 @@ void setup() {
     Serial.print(".");
     delay(10);
   }
-  
+
   // Connected successfully => Turn off System Start LED (Red) and turn on Connection LED (Green)
 
   Serial.println();
   Serial.print("Connected with IP: ");
   Serial.println(WiFi.localIP());
   Serial.println();
-  
+
   // Connect to Firebase
   Serial.printf("Firebase Client v%s\n\n", FIREBASE_CLIENT_VERSION);
   config.signer.tokens.legacy_token = API_KEY;
@@ -79,52 +79,53 @@ void setup() {
 }
 //Loop Function:
 void loop() {
-          servo.write(280);
   unsigned long currentTime = millis();
-  if (currentTime - prevTime_T1 > interval_T1) {
-    //Controlling Devices:
-    // Bed :
-    controllBed();
-    // Led :
-    deviceControll("LED", LED);
-    // Aspritor :
-    deviceControll("ASPRITOR", aspritor);
-    //Get Sound and Air Quality Values:
-    soundValue = analogRead(soundPin);
-    airQuality = analogRead(mq135Pin) ;
-    // Print Sound and Air Quality Values for Arduino IDE:
-    Serial.print("Sound value: ");
-    Serial.println(soundValue);
-    Serial.print("MQ-135 Value: ");
-    Serial.println(airQuality);
-    // Send Sound and Air Quality Values to Firebase:
-    Firebase.setString(firebaseData, "/ESP/SENSOR/SOUND", soundValue);
-    Firebase.setString(firebaseData, "/ESP/SENSOR/AIR_QUALITY", airQuality);
-    prevTime_T1 = currentTime;
-  }
-  if (currentTime - prevTime_T2 > interval_T2) {
-    //Function to get Tempreature and Humadity Value:
+  soundValue = analogRead(soundPin);
+  Serial.print("Sound value: ");
+  Serial.println(soundValue);
+  if (currentTime - prevTime > thresholdUpdateInterval) {
     tempreatureHumditiySensor();
-    prevTime_T2 = currentTime;
+    prevTime = currentTime;
   }
-  if (currentTime - prevTime_T3 > interval_T3) {
-    // Get and Set Values of Thresholds :
-    soundThreShold = getThreeshold("SOUND_THRESHOLD");
-    airQualityThree = getThreeshold("AIR_QUALITY_THRESHOLD");
-    humidityThreShold = getThreeshold("HUMIDITY_THRESHOLD");
-    prevTime_T3 = currentTime;
+  // Assuming firebaseData is a FirebaseData object declared somewhere in your code
+
+  Firebase.getString(firebaseData, "/ESP/DEVICES/BED");
+  String currentBedValue = firebaseData.stringData();
+  controllBed(currentBedValue);
+
+  Firebase.getString(firebaseData, "/ESP/DEVICES/LED");
+  String currentLedValue = firebaseData.stringData();
+  if (currentLedValue != prevLedValue) {
+    prevLedValue = currentLedValue;
+    deviceControll("LED", LED);
   }
+  Firebase.getString(firebaseData, "/ESP/DEVICES/ASPRITOR");
+  String currentAspValue = firebaseData.stringData();
+  if (currentAspValue != prevAspValue) {
+    prevAspValue = currentAspValue;
+    deviceControll("ASPRITOR", aspritor);
+  }
+
   // If Auto Control System enabled:
   if (Firebase.getString(firebaseData, "/ESP/DEVICES/autoControl")) {
     String autoControl = firebaseData.stringData();
     if (autoControl == "1") {
-      // If air quality or Humadity greater than thresholds And soundValue greater than soundThreShold :
-      // Turn on Aspritor and shock bed for 30 seconds:
-      if ((airQuality >= airQualityThree || humidity >= humidityThreShold) && soundValue >= soundThreShold) {
 
-        for (int i = 0; i <= 15; i++) {
+      Firebase.setString(firebaseData, "/ESP/SENSOR/SOUND", soundValue);
+      soundThreShold = getThreeshold("SOUND_THRESHOLD");
+      humidityThreShold = getThreeshold("HUMIDITY_THRESHOLD");
+      Serial.println(humidity);
+      Serial.println(soundValue);
+      Serial.println("----------------");
+      Serial.println(humidityThreShold);
+      Serial.println(soundThreShold);
+      // If  quality or Humadity greater than thresholds And soundValue greater than soundThreShold :
+      // Turn on Aspritor and shock bed for 30 seconds:
+      if ((humidity > humidityThreShold) && soundValue > soundThreShold) {
+        Serial.println("MODE ONE ");
+        for (int i = 0; i <= 5; i++) {
           digitalWrite(aspritor, HIGH);
-          servo.write(280);
+          servo.write(servoAngle);
           delay(500);
           digitalWrite(aspritor, HIGH);
           servo.write(0);
@@ -133,18 +134,20 @@ void loop() {
         digitalWrite(aspritor, LOW);
         servo.write(0);
       }
-      // If air quality or Humadity greater than thresholds :
-      // Turn on Aspritor for 15 seconds:
-      else if (airQuality >= airQualityThree || humidity >= humidityThreShold) {
+      // If  quality or Humadity greater than thresholds :
+      // Turn on Aspritor for 5 seconds:
+      else if (humidity > humidityThreShold) {
+        Serial.println("MODE TOW ");
         digitalWrite(aspritor, HIGH);
-        delay(15000);
+        delay(5000);
         digitalWrite(aspritor, LOW);
       }
       // soundValue greater than soundThreShold :
-      // shock bed for 30 seconds :
-      else if (soundValue >= soundThreShold) {
-        for (int i = 0; i <= 30; i++) {
-          servo.write(280);
+      // shock bed for 10 seconds :
+      else if (soundValue > soundThreShold) {
+        Serial.println("MODE THREE ");
+        for (int i = 0; i <= 10; i++) {
+          servo.write(servoAngle);
           delay(400);
           servo.write(0);
           delay(400);
@@ -171,24 +174,43 @@ void deviceControll(String deviceName, int pins) {
   }
 }
 // Function for Controlling Bed :
-void controllBed() {
-  if (Firebase.getString(firebaseData, "/ESP/DEVICES/BED")) {
-    String bed = firebaseData.stringData();
-    if (bed == "1") {
-      for (int i = 0; i <= 5; i++) {
-        delay(500);
-        Serial.println(F("Bed ON "));
-        servo.write(45);
-        delay(500);
-        servo.write(0);
-      }
-    } else if (bed == "0") {
-      Serial.println(F("Bed OFF "));
-      servo.write(0);
+void controllBed(String bedValue) {
+  // Your existing controllBed logic goes here
+  // This function will be called only when the BED value changes
+  Serial.print("BED value changed to: ");
+  Serial.println(bedValue);
+
+  // Add your controllBed function logic here
+  if (bedValue == "1") {
+    for (int i = 0; i <= 3; i++) {
+      delay(500);
+      Serial.println(F("Bed ON "));
+      servo.write(servoAngle);  // Set servo to 90 degrees
+      delay(500);
+      servo.write(0);  // Set servo back to 0 degrees
     }
+  } else if (bedValue == "0") {
+    Serial.println(F("Bed OFF "));
+    servo.write(0);
   }
 }
-//Function to Get Threesholds from Firebase :
+
+void tempreatureHumditiySensor() {
+  // If Sensor not Connected => sensor value will become '2147483647'
+  // and we will send error value to firebase to show message in mobile app:
+
+  temreature = dht.readTemperature();
+  humidity = dht.readHumidity();
+  //Print for arduino IDE:
+  Serial.print("Tempreature Value : ");
+  Serial.println(temreature);
+  Serial.print("Humadity Value    : ");
+  Serial.println(humidity);
+  //Send to firebase
+  Firebase.setString(firebaseData, "/ESP/SENSOR/TEMP", temreature);
+  Firebase.setString(firebaseData, "/ESP/SENSOR/HUM", humidity);
+}
+
 int getThreeshold(String threShould) {
   int thresholdValue = 0;
   String path = "/ESP/THRESHOLDS/" + threShould;
@@ -201,43 +223,3 @@ int getThreeshold(String threShould) {
   Serial.println(thresholdValue);
   return thresholdValue;
 }
-
-
-void tempreatureHumditiySensor() {
-  // If Sensor not Connected => sensor value will become '2147483647'
-  // and we will send error value to firebase to show message in mobile app:
-  
-    temreature = dht.readTemperature()  ;
-    humidity = dht.readHumidity() ;
-    //Print for arduino IDE:
-    Serial.print("Tempreature Value : ");
-    Serial.println(temreature);
-    Serial.print("Humadity Value    : ");
-    Serial.println(humidity);
-    //Send to firebase
-    Firebase.setString(firebaseData, "/ESP/SENSOR/TEMP", temreature);
-    Firebase.setString(firebaseData, "/ESP/SENSOR/HUM", humidity);
-  
-}
-// Function to Connect to Firebase :
-// void connectToFirebase() {
-
-//   const char* ssid = "Tenda_79F720";
-//   const char* password = "dlo1223334444";
-//   delay(10);
-//   Serial.println();
-//   Serial.print("Connecting with ");
-//   Serial.println(ssid);
-//   WiFi.begin(ssid, password);
-
-//   while (WiFi.status() != WL_CONNECTED) {
-//     delay(500);
-//     Serial.println("Not Connected");
-//   }
-//   Serial.println("");
-//   Serial.print("WiFi conected. IP: ");
-//   Serial.println(WiFi.localIP());
-//   // Firebase Project IDLink and passcode ;
-//   Firebase.begin("https://iot---flutter-default-rtdb.firebaseio.com/", "ZUnNUfxZEMAIFrHSPW8KkYDG8hRqWgvRFhYWvSbP");
-//   duration = millis();
-// }
